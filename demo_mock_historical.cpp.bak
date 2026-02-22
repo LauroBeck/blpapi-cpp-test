@@ -1,0 +1,153 @@
+#include <iostream>
+#include <vector>
+#include <string>
+#include <iomanip>
+#include <ctime>
+#include <cstdlib>
+#include <map>
+
+// ---------- Mock Bloomberg Classes ----------
+class Element {
+public:
+    std::string name;
+    std::map<std::string, std::vector<double>> fieldData;
+
+    Element(const std::string& n) : name(n) {}
+
+    void appendValue(const std::string& value) {
+        name = value;
+    }
+
+    void setFieldData(const std::string& field, const std::vector<double>& values) {
+        fieldData[field] = values;
+    }
+
+    void print() {
+        std::cout << name << "\n";
+        std::cout << std::setw(12) << "Date";
+        for (auto& f : fieldData)
+            std::cout << std::setw(12) << f.first;
+        std::cout << std::endl;
+
+        std::time_t t = std::time(nullptr);
+        std::tm tm = *std::localtime(&t);
+        for (size_t i = 0; i < fieldData.begin()->second.size(); ++i) {
+            tm.tm_mday -= (int)(fieldData.begin()->second.size() - i);
+            std::mktime(&tm);
+            std::cout << std::setw(12) << std::put_time(&tm, "%Y-%m-%d");
+            for (auto& f : fieldData) {
+                std::cout << std::setw(12) << f.second[i];
+            }
+            std::cout << std::endl;
+            tm.tm_mday += (int)(fieldData.begin()->second.size() - i);
+        }
+    }
+};
+
+class Message {
+public:
+    Element securityData;
+    Message(const std::string& securityName) : securityData(securityName) {}
+};
+
+class Event {
+public:
+    enum EventType { PARTIAL_RESPONSE, RESPONSE };
+    EventType eventType_;
+    std::vector<Message> messages;
+    Event(EventType t) : eventType_(t) {}
+};
+
+class MockSession {
+public:
+    MockSession(const std::string& host, int port)
+        : host_(host), port_(port), started_(false) {}
+
+    bool start() {
+        started_ = true;
+        std::cout << "Mock session started to " << host_ << ":" << port_ << std::endl;
+        return started_;
+    }
+
+    void stop() {
+        if (started_) {
+            std::cout << "Mock session stopped" << std::endl;
+            started_ = false;
+        }
+    }
+
+    // Simulate sending historical data request
+    Event sendHistoricalDataRequest(const std::vector<std::string>& securities,
+                                    const std::vector<std::string>& fields,
+                                    const std::string& startDate,
+                                    const std::string& endDate,
+                                    const std::string& periodicity)
+    {
+        std::cout << "Sending mock HistoricalDataRequest..." << std::endl;
+
+        Event event(Event::RESPONSE);
+        for (auto& sec : securities) {
+            Message msg(sec);
+            for (auto& f : fields) {
+                std::vector<double> values;
+                for (int i = 0; i < 5; ++i) {
+                    double value = 100 + (std::rand() % 5000) / 100.0;
+                    values.push_back(value);
+                }
+                msg.securityData.setFieldData(f, values);
+            }
+            event.messages.push_back(msg);
+        }
+        return event;
+    }
+
+    Event nextEvent() {
+        // In a real mock, we could implement streaming partial responses
+        // For simplicity, we return the last event already prepared
+        return lastEvent_;
+    }
+
+    void setLastEvent(const Event& e) { lastEvent_ = e; }
+
+private:
+    std::string host_;
+    int port_;
+    bool started_;
+    Event lastEvent_ = Event(Event::RESPONSE);
+};
+
+// ---------- User Processing Functions ----------
+bool ProcessExceptions(const Message& msg) { return true; }
+bool ProcessErrors(const Message& msg) { return true; }
+void ProcessFields(const Message& msg) { msg.securityData.print(); }
+
+// ---------- Main Demo ----------
+int main() {
+    std::vector<std::string> d_securities = {"IBM US Equity", "GOOG Equity"};
+    std::vector<std::string> d_fields = {"PX_LAST", "PX_BID"};
+
+    MockSession session("localhost", 8194);
+    if (!session.start()) {
+        std::cerr << "Failed to start mock session!" << std::endl;
+        return 1;
+    }
+
+    // Send historical data request
+    Event event = session.sendHistoricalDataRequest(d_securities, d_fields,
+                                                    "20120101", "20121231", "MONTHLY");
+    session.setLastEvent(event);
+
+    // Simulate Bloomberg event loop
+    while (true) {
+        Event e = session.nextEvent();
+        for (auto& msg : e.messages) {
+            if (!ProcessExceptions(msg) || !ProcessErrors(msg)) continue;
+            ProcessFields(msg);
+        }
+        if (e.eventType_ == Event::RESPONSE)
+            break;
+    }
+
+    session.stop();
+    return 0;
+}

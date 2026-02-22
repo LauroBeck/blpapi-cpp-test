@@ -1,0 +1,45 @@
+#include <blpapi_session.h>
+#include <blpapi_sessionoptions.h>
+#include <iostream>
+#include <string>
+
+// Use the correct namespace
+using namespace BloombergLP::blpapi;
+
+int main() {
+    std::string host = "localhost"; // replace with your Bloomberg IP if available
+    int port = 8194;
+
+    try {
+        // Configure session options
+        SessionOptions options;
+        options.setServerHost(host.c_str());
+        options.setServerPort(port);
+        options.setAutoRestartOnDisconnection(true);
+        options.setNumStartAttempts(1);
+
+        // Create session
+        Session session(options);
+
+        std::cout << "Attempting to start session to " << host << ":" << port << "...\n";
+
+        if (!session.start()) {
+            std::cerr << "Session failed to start. The host may be unreachable.\n";
+            std::cerr << "This is expected if you don't have a Bloomberg Desktop or Server API running.\n";
+            return 1;
+        }
+
+        std::cout << "Session started successfully!\n";
+
+        // Normally you would send requests here
+
+        session.stop();
+        std::cout << "Session stopped.\n";
+
+    } catch (const std::exception &ex) {
+        std::cerr << "Exception caught: " << ex.what() << "\n";
+        return 1;
+    }
+
+    return 0;
+}
